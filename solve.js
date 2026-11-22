@@ -44,6 +44,12 @@ export function run(input) {
 
   let pos = 0; // the next character to read
   let line = 1; // the line that character is on
+  // The next LF that would end the current record (n when there is none):
+  // the record's LF is found once at the record's start and reused by every
+  // unquoted field in it, instead of searching for it again per field. It
+  // only goes stale when a quoted field swallows an LF as content, and then
+  // the next unquoted field re-finds it (recLf < pos detects that).
+  let recLf = 0;
   if (n > 0 && text.charCodeAt(0) === 0xfeff) pos = 1;
 
   // The record being read: the line it starts on and the index in rows it takes (null: the header).
@@ -65,18 +71,24 @@ export function run(input) {
   // the slice's last character and the field ends at that LF; every other CR
   // in the slice is a stray_cr.
   function unquoted(v) {
+    if (recLf < pos) {
+      recLf = text.indexOf('\n', pos);
+      if (recLf === -1) recLf = n;
+    }
     const ci = text.indexOf(',', pos);
-    const ni = text.indexOf('\n', pos);
-    let end = -1;
-    let kind = END;
-    if (ci !== -1 && (ni === -1 || ci < ni)) {
+    let end;
+    let kind;
+    if (ci !== -1 && ci < recLf) {
       end = ci;
       kind = COMMA;
-    } else if (ni !== -1) {
-      end = ni;
+    } else if (recLf < n) {
+      end = recLf;
       kind = LINE_BREAK;
+    } else {
+      end = n;
+      kind = END;
     }
-    const stop = end === -1 ? n : end;
+    const stop = end;
     const s = text.slice(pos, stop);
     let added = 0;
     if (s.indexOf('\r') === -1) {
@@ -224,6 +236,7 @@ export function run(input) {
     let isQuoted = false;
     const lf = text.indexOf('\n', pos);
     const segEnd = lf === -1 ? n : lf;
+    recLf = segEnd;
     const q = text.indexOf('"', pos);
     if (q === -1 || q >= segEnd) {
       const r = text.indexOf('\r', pos);
